@@ -1,0 +1,3 @@
+garminconnect
+google-generativeai
+python-dotenv
