@@ -21,12 +21,12 @@ jobs:
       - name: Install libraries
         run: |
           pip install garminconnect
-          pip install openai
+          pip install google-generativeai
 
       - name: Run coach
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python coach.py
