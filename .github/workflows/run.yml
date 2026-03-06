@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -19,7 +20,13 @@ jobs:
 
       - name: Install libraries
         run: |
-          pip install garminconnect openai
+          pip install garminconnect
+          pip install openai
 
       - name: Run coach
-        run: python coach.py
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+        run: |
+          python coach.py
