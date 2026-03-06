@@ -1,4 +1,4 @@
-name: AI Running Coach
+name: running-coach
 
 on:
   schedule:
@@ -6,24 +6,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-coach:
+  run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          pip install garminconnect requests
+      - run: pip install -r requirements.txt
 
-      - name: Run coach
-        run: python coach.py
+      - run: python coach.py
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
