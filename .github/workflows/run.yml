@@ -21,7 +21,7 @@ jobs:
       - name: Install libraries
         run: |
           pip install garminconnect
-          pip install google-generativeai
+          pip install google-genai
 
       - name: Run coach
         env:
