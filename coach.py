@@ -1,151 +1,52 @@
 import os
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime
 
-from garminconnect import Garmin
-from google import genai
+# DeepSeek API Key
+API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-
-# ------------------------
-# 1 读取环境变量
-# ------------------------
-
-EMAIL = os.environ["GARMIN_EMAIL"]
-PASSWORD = os.environ["GARMIN_PASSWORD"]
-API_KEY = os.environ["GEMINI_API_KEY"]
-
-
-# ------------------------
-# 2 登录 Garmin
-# ------------------------
-
-print("Connecting Garmin...")
-
-client = Garmin(EMAIL, PASSWORD)
-client.login()
-
-today = datetime.now().date()
-yesterday = today - timedelta(days=1)
-
-
-# ------------------------
-# 3 获取健康数据
-# ------------------------
-
-print("Fetching health data...")
-
-stats = client.get_stats(str(today))
-
-resting_hr = stats.get("restingHeartRate")
-steps = stats.get("totalSteps")
-calories = stats.get("totalKilocalories")
-
-
-# ------------------------
-# 4 获取 Body Battery
-# ------------------------
-
-try:
-    body = client.get_body_battery(str(today), str(today))
-    body_battery = body["bodyBatteryValues"][-1]["bodyBattery"]
-except:
-    body_battery = "unknown"
-
-
-# ------------------------
-# 5 获取睡眠
-# ------------------------
-
-try:
-    sleep = client.get_sleep_data(str(yesterday))
-    sleep_score = sleep.get("sleepScore")
-    sleep_time = sleep.get("sleepTimeSeconds")
-except:
-    sleep_score = "unknown"
-    sleep_time = "unknown"
-
-
-# ------------------------
-# 6 获取最近一次活动
-# ------------------------
-
-print("Fetching last activity...")
-
-activities = client.get_activities(0, 1)
-
-if activities:
-    act = activities[0]
-
-    activity_type = act["activityType"]["typeKey"]
-    distance = act.get("distance", 0) / 1000
-    duration = act.get("duration", 0) / 60
-    avg_hr = act.get("averageHR")
-    avg_pace = act.get("averageSpeed")
-
-else:
-    activity_type = "none"
-    distance = 0
-    duration = 0
-    avg_hr = "unknown"
-    avg_pace = "unknown"
-
-
-# ------------------------
-# 7 构建 AI Prompt
-# ------------------------
+# 跑步数据（你之后可以改成自动读取）
+distance = 10
+pace = "5:20"
+heartrate = 150
 
 prompt = f"""
-You are a professional marathon coach.
+今天跑步数据：
 
-Analyze the athlete's daily health data and latest training.
+距离: {distance} km
+配速: {pace} /km
+平均心率: {heartrate}
 
-Health data today:
-Resting HR: {resting_hr}
-Steps: {steps}
-Calories: {calories}
-Body Battery: {body_battery}
-
-Sleep:
-Sleep score: {sleep_score}
-Sleep seconds: {sleep_time}
-
-Latest activity:
-Type: {activity_type}
-Distance km: {distance:.2f}
-Duration minutes: {duration:.1f}
-Average HR: {avg_hr}
-
-Please provide:
-
-1. Recovery status today
-2. Quality of the latest run
-3. Potential fatigue risk
-4. Training recommendation
-5. Estimated fitness trend
+请像专业跑步教练一样分析：
+1. 今天训练强度
+2. 是否有提升
+3. 下一次训练建议
 """
 
+url = "https://api.deepseek.com/v1/chat/completions"
 
-# ------------------------
-# 8 调用 Gemini
-# ------------------------
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
 
-print("Calling AI coach...")
+data = {
+    "model": "deepseek-chat",
+    "messages": [
+        {"role": "system", "content": "You are a professional running coach."},
+        {"role": "user", "content": prompt}
+    ]
+}
 
-ai = genai.Client(api_key=API_KEY)
+response = requests.post(url, headers=headers, json=data)
+result = response.json()
 
-response = ai.models.generate_content(
-    model="gemini-2.0-flash",
-    contents=prompt
-)
+analysis = result["choices"][0]["message"]["content"]
 
-report = response.text
+print("AI Running Coach")
+print("----------------")
+print(analysis)
 
-
-# ------------------------
-# 9 输出报告
-# ------------------------
-
-print("\n========== AI RUNNING COACH ==========\n")
-
-print(report)
-
-print("\n======================================")
+# 保存到文件（GitHub Actions 可以存日志）
+with open("result.txt", "w") as f:
+    f.write(analysis)
