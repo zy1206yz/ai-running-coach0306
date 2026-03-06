@@ -1,33 +1,30 @@
 name: AI Running Coach
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 23 * * *'
+    - cron: '0 22 * * *'
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: setup python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install libraries
-        run: |
-          python -m pip install --upgrade pip
-          pip install garminconnect
-          pip install requests
+      - name: install packages
+        run: pip install -r requirements.txt
 
-      - name: Run coach
+      - name: run coach
+        run: python coach.py
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: |
-          python coach.py
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
