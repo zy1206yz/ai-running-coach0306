@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  coach:
+  run:
     runs-on: ubuntu-latest
 
     steps:
