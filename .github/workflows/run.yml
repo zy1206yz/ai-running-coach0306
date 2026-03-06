@@ -1,4 +1,4 @@
-name: running-coach
+name: AI Running Coach
 
 on:
   schedule:
@@ -6,21 +6,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  run:
+  coach:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - run: pip install -r requirements.txt
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
 
-      - run: python coach.py
+      - name: Run Coach
+        run: python coach.py
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+
+      - name: Commit Profile
+        run: |
+          git config --global user.name "ai-coach"
+          git config --global user.email "ai@coach.com"
+          git add data/ || true
+          git commit -m "update athlete profile" || true
+          git push || true
