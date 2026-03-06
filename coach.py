@@ -14,7 +14,7 @@ DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 FEISHU_WEBHOOK = os.environ["FEISHU_WEBHOOK"]
 
 # =========================
-# 基础运动员信息
+# 基础信息
 # =========================
 
 BASE_INFO = {
@@ -37,7 +37,7 @@ def login():
 # 数据获取
 # =========================
 
-def get_runs(client, limit=1000):
+def get_runs(client, limit=200):
     return client.get_activities(0, limit)
 
 def get_health(client):
@@ -60,24 +60,34 @@ def save_profile(profile):
         json.dump(profile, f, ensure_ascii=False, indent=2)
 
 # =========================
-# 训练负荷
+# 训练负荷 + FIS
 # =========================
 
 def calculate_load(runs, client):
+
     loads = []
 
     for r in runs[:30]:
         detail = client.get_activity(r["activityId"])
-        if detail.get("distance") and detail.get("duration"):
-            load = (detail["distance"]/1000) * (detail.get("averageHR",0))
-            loads.append(load)
+
+        if not detail.get("distance") or not detail.get("duration"):
+            continue
+
+        load = (detail["distance"]/1000) * (detail.get("averageHR") or 0)
+        loads.append(load)
 
     if len(loads) < 7:
         return None
 
+    loads = np.array(loads)
+
     acute = np.mean(loads[:7])
     chronic = np.mean(loads)
-    acwr = acute / chronic if chronic else 0
+
+    if chronic == 0:
+        acwr = 0
+    else:
+        acwr = acute / chronic
 
     return {
         "acute": float(acute),
@@ -90,11 +100,12 @@ def calculate_load(runs, client):
 # =========================
 
 def posture_score(detail):
+
     score = 0
 
-    cadence = detail.get("averageRunCadence",0)
-    vert_ratio = detail.get("verticalRatio",0)
-    gct = detail.get("avgGroundContactTime",999)
+    cadence = detail.get("averageRunCadence") or 0
+    vert_ratio = detail.get("verticalRatio") or 0
+    gct = detail.get("avgGroundContactTime") or 999
 
     if 170 <= cadence <= 190:
         score += 25
@@ -108,17 +119,22 @@ def posture_score(detail):
     return score
 
 # =========================
-# 成绩预测（Riegel）
+# 马拉松预测
 # =========================
 
-def predict_marathon(pace_min_per_km):
-    return pace_min_per_km * (42.195 ** 1.06)
+def predict_marathon(pace):
+
+    if not pace or pace <= 0:
+        return None
+
+    return pace * (42.195 ** 1.06)
 
 # =========================
-# AI调用
+# AI 调用
 # =========================
 
 def ai(prompt):
+
     url = "https://api.deepseek.com/chat/completions"
 
     headers = {
@@ -139,7 +155,7 @@ def ai(prompt):
     res = r.json()
 
     if "choices" not in res:
-        return f"API错误: {res}"
+        return f"AI错误: {res}"
 
     return res["choices"][0]["message"]["content"]
 
@@ -151,9 +167,9 @@ client = login()
 
 profile = load_profile()
 
-# 第一次建立完整画像
+# 第一次建立画像
 if profile is None:
-    runs = get_runs(client, 1000)
+    runs = get_runs(client, 500)
 
     profile = {
         "basic_info": BASE_INFO,
@@ -167,38 +183,54 @@ health = get_health(client)
 
 health_report = f"""
 ## 🟢 昨日健康状态
-- 静息心率: {health.get('restingHeartRate')}
-- 压力指数: {health.get('stressLevel')}
-- 睡眠: {health.get('sleepDuration')}
+- 静息心率: {health.get('restingHeartRate') or '无数据'}
+- 压力指数: {health.get('stressLevel') or '无数据'}
+- 睡眠: {health.get('sleepDuration') or '无数据'}
 """
 
 # 最新训练
 latest = get_runs(client,1)[0]
 detail = client.get_activity(latest["activityId"])
 
-# 跑姿评分
+# 跑姿
 posture = posture_score(detail)
 
-# 预测成绩
+# 配速计算（安全）
+marathon_text = "预测全马时间: 数据不足"
+
 if detail.get("duration") and detail.get("distance"):
     pace = (detail["duration"]/60)/(detail["distance"]/1000)
     marathon_time = predict_marathon(pace)
-else:
-    marathon_time = None
+    if marathon_time:
+        marathon_text = f"预测全马时间: {marathon_time:.1f} 分钟"
 
+# 负荷
+load = calculate_load(get_runs(client,30), client)
+
+if load:
+    acwr = load["acwr"]
+    if acwr > 1.5:
+        load_status = "⚠️ 高疲劳风险"
+    elif acwr < 0.8:
+        load_status = "恢复期/训练不足"
+    else:
+        load_status = "训练负荷正常"
+
+    load_text = f"""
+## 📊 训练负荷
+- ACWR: {acwr:.2f}
+- 状态: {load_status}
+"""
+else:
+    load_text = ""
+
+# AI分析
 prompt = f"""
-基于以下运动员信息：
+基于运动员画像:
 {profile}
 
-分析今日训练数据：
+分析今日训练数据:
 {json.dumps(detail, ensure_ascii=False)}
-
-要求：
-- 训练负荷判断
-- 疲劳状态
-- 跑姿分析
-- VO2max趋势推测
-- 全马预测参考
 """
 
 analysis = ai(prompt)
@@ -208,7 +240,9 @@ run_report = f"""
 
 跑姿评分: {posture}/100
 
-预测全马时间: {marathon_time:.1f} 分钟
+{marathon_text}
+
+{load_text}
 
 {analysis}
 """
