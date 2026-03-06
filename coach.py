@@ -2,11 +2,8 @@ import os
 import json
 import requests
 import datetime
+import pandas as pd
 from garminconnect import Garmin
-
-# =========================
-# 基础配置
-# =========================
 
 PROFILE_FILE = "data/athlete_profile.json"
 
@@ -15,29 +12,29 @@ PASSWORD = os.environ["GARMIN_PASSWORD"]
 DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 FEISHU_WEBHOOK = os.environ["FEISHU_WEBHOOK"]
 
-# =========================
-# Garmin 登录（中国区）
-# =========================
+# =====================
+# 登录（中国区）
+# =====================
 
 def login():
     client = Garmin(EMAIL, PASSWORD, is_cn=True)
     client.login()
     return client
 
-# =========================
-# 获取数据
-# =========================
+# =====================
+# 数据获取
+# =====================
 
-def get_runs(client, limit=50):
+def get_runs(client, limit=200):
     return client.get_activities(0, limit)
 
 def get_health(client):
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     return client.get_stats(yesterday)
 
-# =========================
+# =====================
 # 画像管理
-# =========================
+# =====================
 
 def load_profile():
     if not os.path.exists(PROFILE_FILE):
@@ -50,9 +47,9 @@ def save_profile(profile):
     with open(PROFILE_FILE, "w", encoding="utf-8") as f:
         json.dump(profile, f, ensure_ascii=False, indent=2)
 
-# =========================
-# DeepSeek调用
-# =========================
+# =====================
+# AI调用
+# =====================
 
 def ai(prompt):
     url = "https://api.deepseek.com/chat/completions"
@@ -68,22 +65,60 @@ def ai(prompt):
             {"role": "system", "content": "你是专业马拉松教练"},
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.7
+        "temperature": 0.6
     }
 
     r = requests.post(url, headers=headers, json=data)
     result = r.json()
 
     if "choices" not in result:
-        return f"AI错误: {result}"
+        return f"API错误: {result}"
 
     return result["choices"][0]["message"]["content"]
 
-# =========================
-# 飞书卡片推送
-# =========================
+# =====================
+# 构建结构化画像
+# =====================
 
-def push_to_feishu(title, content):
+def build_profile(runs, client):
+
+    distances = []
+    hrs = []
+    cadences = []
+    paces = []
+
+    for r in runs[:100]:
+        detail = client.get_activity(r["activityId"])
+
+        if detail.get("distance"):
+            distances.append(detail["distance"] / 1000)
+
+        if detail.get("averageHR"):
+            hrs.append(detail["averageHR"])
+
+        if detail.get("averageRunCadence"):
+            cadences.append(detail["averageRunCadence"])
+
+        if detail.get("duration") and detail.get("distance"):
+            pace = (detail["duration"] / 60) / (detail["distance"] / 1000)
+            paces.append(pace)
+
+    profile = {
+        "baseline": {
+            "avg_distance": float(pd.Series(distances).mean()),
+            "avg_hr": float(pd.Series(hrs).mean()),
+            "avg_cadence": float(pd.Series(cadences).mean()),
+            "avg_pace": float(pd.Series(paces).mean())
+        }
+    }
+
+    return profile
+
+# =====================
+# 飞书卡片
+# =====================
+
+def push(title, content):
 
     card = {
         "msg_type": "interactive",
@@ -95,10 +130,7 @@ def push_to_feishu(title, content):
             "elements": [
                 {
                     "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": content
-                    }
+                    "text": {"tag": "lark_md", "content": content}
                 }
             ]
         }
@@ -106,52 +138,54 @@ def push_to_feishu(title, content):
 
     requests.post(FEISHU_WEBHOOK, json=card)
 
-# =========================
-# 主逻辑
-# =========================
+# =====================
+# 主流程
+# =====================
 
 client = login()
 
-# 1️⃣ 长期画像（如果不存在）
 profile = load_profile()
 
+# 第一次建立画像
 if profile is None:
     runs = get_runs(client, 200)
-
-    prompt = f"根据以下历史跑步数据建立运动员长期能力画像：{json.dumps(runs[:100], ensure_ascii=False)}"
-
-    profile = {"summary": ai(prompt)}
+    profile = build_profile(runs, client)
     save_profile(profile)
 
-# 2️⃣ 每日健康
+# 健康数据
 health = get_health(client)
 
 health_report = f"""
-🟢 昨日健康状态
+## 🟢 昨日健康状态
 
-静息心率：{health.get('restingHeartRate')}
-压力指数：{health.get('stressLevel')}
-睡眠时长：{health.get('sleepDuration')}
+- 静息心率：{health.get('restingHeartRate')}
+- 压力指数：{health.get('stressLevel')}
+- 睡眠时长：{health.get('sleepDuration')}
 """
 
-# 3️⃣ 最近一次训练
+# 最新训练
 latest = get_runs(client, 1)[0]
-activity_id = latest["activityId"]
+detail = client.get_activity(latest["activityId"])
 
-detail = client.get_activity(activity_id)
-
-prompt_run = f"""
-基于已有运动员画像：
+prompt = f"""
+已有运动员基线：
 {profile}
 
-分析以下训练数据：
+今日训练数据：
 {json.dumps(detail, ensure_ascii=False)}
+
+请做基于基线的对比分析。
 """
 
-run_analysis = ai(prompt_run)
+run_analysis = ai(prompt)
 
-# 4️⃣ 推送
-push_to_feishu("AI教练日报 - 健康", health_report)
-push_to_feishu("AI教练日报 - 训练", run_analysis)
+run_report = f"""
+## 🏃 昨日训练分析
+
+{run_analysis}
+"""
+
+push("AI教练日报 - 健康", health_report)
+push("AI教练日报 - 训练", run_report)
 
 print("完成")
