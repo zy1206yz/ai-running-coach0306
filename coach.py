@@ -1,72 +1,115 @@
 import os
+import json
 import requests
+from datetime import date
 from garminconnect import Garmin
 
-# =========================
-# Garmin 登录
-# =========================
-email = os.environ["GARMIN_EMAIL"]
-password = os.environ["GARMIN_PASSWORD"]
+# ======================
+# 1 读取环境变量
+# ======================
 
-garmin = Garmin(email, password)
-garmin.login()
+garmin_email = os.environ["GARMIN_EMAIL"]
+garmin_password = os.environ["GARMIN_PASSWORD"]
+deepseek_key = os.environ["DEEPSEEK_API_KEY"]
+feishu_webhook = os.environ["FEISHU_WEBHOOK"]
 
-activities = garmin.get_activities(0, 1)
+# ======================
+# 2 登录Garmin
+# ======================
 
-if not activities:
-    print("No activities found.")
-    exit()
+client = Garmin(garmin_email, garmin_password)
+client.login()
 
-run = activities[0]
+activities = client.get_activities(0, 1)
 
-distance = run.get("distance", 0) / 1000
-duration = run.get("duration", 0) / 60
-avg_hr = run.get("averageHR", "N/A")
+activity = activities[0]
 
-summary = f"""
-Today's run data:
-Distance: {distance:.2f} km
-Duration: {duration:.1f} minutes
-Average Heart Rate: {avg_hr}
+distance = activity["distance"] / 1000
+duration = activity["duration"]
+avg_hr = activity.get("averageHR", "未知")
+calories = activity.get("calories", "未知")
+pace = duration / distance / 60
 
-Please analyze my running condition and give short training advice.
+# ======================
+# 3 生成训练描述
+# ======================
+
+training_text = f"""
+今天跑步数据：
+
+距离：{distance:.2f} km
+时间：{duration/60:.1f} 分钟
+平均配速：{pace:.2f} min/km
+平均心率：{avg_hr} bpm
+消耗热量：{calories}
+
+请像一个专业耐力运动教练一样，用中文详细分析这次训练，包括：
+
+1 训练强度判断
+2 心率与配速关系
+3 当前体能水平推测
+4 对恢复情况的判断
+5 对下一次训练的建议
+6 长期训练趋势建议
+
+语气要自然，不要AI感。
 """
 
-# =========================
-# DeepSeek API
-# =========================
-
-api_key = os.environ["DEEPSEEK_API_KEY"]
-
-url = "https://api.deepseek.com/v1/chat/completions"
+# ======================
+# 4 调用DeepSeek
+# ======================
 
 headers = {
-    "Authorization": f"Bearer {api_key}",
+    "Authorization": f"Bearer {deepseek_key}",
     "Content-Type": "application/json"
 }
 
 payload = {
     "model": "deepseek-chat",
     "messages": [
-        {"role": "system", "content": "You are a professional running coach."},
-        {"role": "user", "content": summary}
+        {"role": "system", "content": "你是一名专业跑步教练"},
+        {"role": "user", "content": training_text}
     ]
 }
 
-response = requests.post(url, headers=headers, json=payload)
+response = requests.post(
+    "https://api.deepseek.com/v1/chat/completions",
+    headers=headers,
+    json=payload
+)
 
 result = response.json()
 
-# =========================
-# 防止API报错
-# =========================
-
-if "choices" not in result:
-    print("DeepSeek API error:")
-    print(result)
-    exit()
-
 analysis = result["choices"][0]["message"]["content"]
 
-print("===== AI Running Coach =====")
-print(analysis)
+# ======================
+# 5 发送到飞书
+# ======================
+
+message = f"""
+🏃 AI跑步教练报告
+
+距离：{distance:.2f} km
+时间：{duration/60:.1f} 分钟
+平均配速：{pace:.2f} min/km
+平均心率：{avg_hr} bpm
+
+————————
+
+{analysis}
+"""
+
+feishu_data = {
+    "msg_type": "text",
+    "content": {
+        "text": message
+    }
+}
+
+requests.post(
+    feishu_webhook,
+    data=json.dumps(feishu_data),
+    headers={"Content-Type": "application/json"}
+)
+
+print("报告已发送到飞书")
