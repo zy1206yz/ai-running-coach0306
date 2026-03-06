@@ -1,52 +1,72 @@
 import os
 import requests
-from datetime import datetime
+from garminconnect import Garmin
 
-# DeepSeek API Key
-API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+# =========================
+# Garmin 登录
+# =========================
+email = os.environ["GARMIN_EMAIL"]
+password = os.environ["GARMIN_PASSWORD"]
 
-# 跑步数据（你之后可以改成自动读取）
-distance = 10
-pace = "5:20"
-heartrate = 150
+garmin = Garmin(email, password)
+garmin.login()
 
-prompt = f"""
-今天跑步数据：
+activities = garmin.get_activities(0, 1)
 
-距离: {distance} km
-配速: {pace} /km
-平均心率: {heartrate}
+if not activities:
+    print("No activities found.")
+    exit()
 
-请像专业跑步教练一样分析：
-1. 今天训练强度
-2. 是否有提升
-3. 下一次训练建议
+run = activities[0]
+
+distance = run.get("distance", 0) / 1000
+duration = run.get("duration", 0) / 60
+avg_hr = run.get("averageHR", "N/A")
+
+summary = f"""
+Today's run data:
+Distance: {distance:.2f} km
+Duration: {duration:.1f} minutes
+Average Heart Rate: {avg_hr}
+
+Please analyze my running condition and give short training advice.
 """
+
+# =========================
+# DeepSeek API
+# =========================
+
+api_key = os.environ["DEEPSEEK_API_KEY"]
 
 url = "https://api.deepseek.com/v1/chat/completions"
 
 headers = {
-    "Authorization": f"Bearer {API_KEY}",
+    "Authorization": f"Bearer {api_key}",
     "Content-Type": "application/json"
 }
 
-data = {
+payload = {
     "model": "deepseek-chat",
     "messages": [
         {"role": "system", "content": "You are a professional running coach."},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": summary}
     ]
 }
 
-response = requests.post(url, headers=headers, json=data)
+response = requests.post(url, headers=headers, json=payload)
+
 result = response.json()
+
+# =========================
+# 防止API报错
+# =========================
+
+if "choices" not in result:
+    print("DeepSeek API error:")
+    print(result)
+    exit()
 
 analysis = result["choices"][0]["message"]["content"]
 
-print("AI Running Coach")
-print("----------------")
+print("===== AI Running Coach =====")
 print(analysis)
-
-# 保存到文件（GitHub Actions 可以存日志）
-with open("result.txt", "w") as f:
-    f.write(analysis)
