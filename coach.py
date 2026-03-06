@@ -1,31 +1,46 @@
-from garminconnect import Garmin
-from openai import OpenAI
-
 import os
+import google.generativeai as genai
+from garminconnect import Garmin
 
+# 读取环境变量
 email = os.environ["GARMIN_EMAIL"]
 password = os.environ["GARMIN_PASSWORD"]
-openai_key = os.environ["OPENAI_KEY"]
+api_key = os.environ["GEMINI_API_KEY"]
 
+# 登录 Garmin
 client = Garmin(email, password)
 client.login()
 
-activities = client.get_activities(0,1)
-run = activities[0]
+# 获取最近活动
+activities = client.get_activities(0, 1)
 
-distance = run["distance"]
-duration = run["duration"]
+activity = activities[0]
 
-data = f"distance {distance} duration {duration}"
+distance = activity["distance"]
+duration = activity["duration"]
+avg_hr = activity.get("averageHR", "unknown")
 
-ai = OpenAI(api_key=openai_key)
+summary = f"""
+Distance: {distance} meters
+Duration: {duration} seconds
+Average HR: {avg_hr}
+"""
 
-response = ai.chat.completions.create(
-model="gpt-4.1-mini",
-messages=[
-{"role":"system","content":"You are a professional marathon coach"},
-{"role":"user","content":f"Analyze this run: {data}"}
-]
-)
+# 初始化 Gemini
+genai.configure(api_key=api_key)
 
-print(response.choices[0].message.content)
+model = genai.GenerativeModel("gemini-1.5-flash")
+
+prompt = f"""
+You are a professional running coach.
+
+Here is my latest running data:
+
+{summary}
+
+Give a short training suggestion.
+"""
+
+response = model.generate_content(prompt)
+
+print(response.text)
