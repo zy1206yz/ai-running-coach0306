@@ -1,32 +1,27 @@
 name: AI Running Coach
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 23 * * *'
+    - cron: "0 12 * * *"   # 每天UTC 12点
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install libraries
-        run: |
-          pip install garminconnect
-          pip install google-genai
+      - name: Install packages
+        run: pip install -r requirements.txt
 
       - name: Run coach
         env:
-          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
-          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python coach.py
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python coach.py
